@@ -2,8 +2,8 @@ import { useState } from "react";
 
 const PROJECT_COLORS = [
   { color: "#6c8eff", bg: "rgba(108,142,255,0.13)", border: "rgba(108,142,255,0.35)" },
-  { color: "#5fffd6", bg: "rgba(95,255,214,0.10)", border: "rgba(95,255,214,0.28)" },
-  { color: "#ff7eb3", bg: "rgba(255,126,179,0.10)", border: "rgba(255,126,179,0.28)" },
+  { color: "#5fffd6", bg: "rgba(95,255,214,0.12)", border: "rgba(95,255,214,0.25)" },
+  { color: "#ff7eb3", bg: "rgba(255,126,179,0.12)", border: "rgba(255,126,179,0.28)" },
   { color: "#ffd36c", bg: "rgba(255,211,108,0.10)", border: "rgba(255,211,108,0.28)" },
   { color: "#a78bfa", bg: "rgba(167,139,250,0.10)", border: "rgba(167,139,250,0.28)" },
   { color: "#fb923c", bg: "rgba(251,146,60,0.10)", border: "rgba(251,146,60,0.28)" },
@@ -23,21 +23,36 @@ function calcDuration(start, end) {
   return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60);
 }
 
-export default function Worklog({ entries, projects, onAdd, onDelete, viewOnly }) {
+const EMPTY_FORM = { date: new Date().toISOString().slice(0,10), start: "09:00", end: "13:00", task: "", projectId: "" };
+
+export default function Worklog({ entries, projects, onAdd, onEdit, onDelete, viewOnly }) {
   const [showAdd, setShowAdd] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
-  const [filter, setFilter] = useState("all"); // all | projectId
-  const [form, setForm] = useState({ date: new Date().toISOString().slice(0,10), start: "09:00", end: "13:00", task: "", projectId: "" });
+  const [editEntry, setEditEntry] = useState(null); // entry being edited
+  const [filter, setFilter] = useState("all");
+  const [form, setForm] = useState(EMPTY_FORM);
   const [newProject, setNewProject] = useState("");
 
-  function handleAdd() {
+  function openAdd() {
+    setForm({ ...EMPTY_FORM, projectId: "" });
+    setShowAdd(true);
+  }
+
+  function openEdit(entry) {
+    setEditEntry(entry);
+    setForm({ date: entry.date, start: entry.start, end: entry.end, task: entry.task, projectId: entry.projectId || "" });
+  }
+
+  function handleSave() {
     if (!form.task.trim()) return;
-    onAdd({
-      id: Date.now().toString(),
-      ...form,
-    });
-    setForm({ date: new Date().toISOString().slice(0,10), start: "09:00", end: "13:00", task: "", projectId: form.projectId });
-    setShowAdd(false);
+    if (editEntry) {
+      onEdit({ ...editEntry, ...form });
+      setEditEntry(null);
+    } else {
+      onAdd({ id: Date.now().toString(), ...form });
+      setShowAdd(false);
+    }
+    setForm(EMPTY_FORM);
   }
 
   function handleAddProject() {
@@ -49,7 +64,6 @@ export default function Worklog({ entries, projects, onAdd, onDelete, viewOnly }
 
   const filtered = filter === "all" ? entries : entries.filter(e => e.projectId === filter);
 
-  // Group by date
   const grouped = {};
   filtered.forEach(e => {
     if (!grouped[e.date]) grouped[e.date] = [];
@@ -57,27 +71,28 @@ export default function Worklog({ entries, projects, onAdd, onDelete, viewOnly }
   });
   const sortedDates = Object.keys(grouped).sort((a,b) => b.localeCompare(a));
 
-  // Total hours per project for summary
   const projectHours = {};
   entries.forEach(e => {
     const h = calcDuration(e.start, e.end);
     projectHours[e.projectId || "none"] = (projectHours[e.projectId || "none"] || 0) + h;
   });
 
+  const isModalOpen = showAdd || editEntry !== null;
+
   return (
     <div>
-      {/* Header row */}
+      {/* Header */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
         <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600 }}>⏱ Ворклог</div>
         {!viewOnly && (
           <div style={{ display:"flex", gap:8 }}>
             <button onClick={() => setShowProjects(true)} style={{ padding:"7px 12px", borderRadius:99, border:"1px solid #252a3a", background:"#1c2030", color:"#6b7394", fontSize:12, fontWeight:600, cursor:"pointer" }}>🏷 Проєкти</button>
-            <button onClick={() => setShowAdd(true)} style={{ padding:"7px 14px", borderRadius:99, border:"none", background:"#6c8eff", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>+ Додати</button>
+            <button onClick={openAdd} style={{ padding:"7px 14px", borderRadius:99, border:"none", background:"#6c8eff", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>+ Додати</button>
           </div>
         )}
       </div>
 
-      {/* Project filter pills */}
+      {/* Project filter */}
       {projects.length > 0 && (
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:16 }}>
           <button onClick={() => setFilter("all")} style={{ padding:"5px 12px", borderRadius:99, border:`1px solid ${filter==="all"?"#6c8eff":"#252a3a"}`, background:filter==="all"?"rgba(108,142,255,0.13)":"transparent", color:filter==="all"?"#6c8eff":"#6b7394", fontSize:11, fontWeight:600, cursor:"pointer" }}>Всі</button>
@@ -109,7 +124,7 @@ export default function Worklog({ entries, projects, onAdd, onDelete, viewOnly }
         </div>
       )}
 
-      {/* Entries grouped by date */}
+      {/* Entries */}
       {sortedDates.length === 0 && (
         <div style={{ textAlign:"center", padding:"40px 0", color:"#3a3f52", fontSize:13 }}>
           {viewOnly ? "Записів ще немає" : "Додай перший запис у ворклог"}
@@ -130,13 +145,12 @@ export default function Worklog({ entries, projects, onAdd, onDelete, viewOnly }
                 const proj = projects.find(p => p.id === entry.projectId);
                 const dur = calcDuration(entry.start, entry.end);
                 return (
-                  <div key={entry.id} style={{ background:"#1c2030", border:"1px solid #252a3a", borderRadius:14, padding:"12px 16px", position:"relative", overflow:"hidden" }}>
+                  <div key={entry.id} style={{ background:"#1c2030", border:"1px solid #252a3a", borderRadius:14, padding:"12px 16px", position:"relative", overflow:"hidden", cursor: !viewOnly ? "pointer" : "default" }}
+                    onClick={() => !viewOnly && openEdit(entry)}>
                     {proj && <div style={{ position:"absolute", left:0, top:0, bottom:0, width:3, background:proj.color, borderRadius:"14px 0 0 14px" }} />}
                     <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:8 }}>
                       <div style={{ flex:1, paddingLeft: proj ? 6 : 0 }}>
-                        {proj && (
-                          <span style={{ display:"inline-block", padding:"2px 8px", borderRadius:99, fontSize:10, fontWeight:600, background:proj.bg, color:proj.color, border:`1px solid ${proj.border}`, marginBottom:6 }}>{proj.name}</span>
-                        )}
+                        {proj && <span style={{ display:"inline-block", padding:"2px 8px", borderRadius:99, fontSize:10, fontWeight:600, background:proj.bg, color:proj.color, border:`1px solid ${proj.border}`, marginBottom:6 }}>{proj.name}</span>}
                         <div style={{ fontSize:13, color:"#e8eaf2", lineHeight:1.4 }}>{entry.task}</div>
                         <div style={{ fontSize:11, color:"#6b7394", marginTop:5 }}>
                           {entry.start} – {entry.end}
@@ -144,7 +158,10 @@ export default function Worklog({ entries, projects, onAdd, onDelete, viewOnly }
                         </div>
                       </div>
                       {!viewOnly && (
-                        <button onClick={() => onDelete(entry.id)} style={{ background:"transparent", border:"none", color:"#3a3f52", fontSize:18, cursor:"pointer", padding:"0 0 0 8px", flexShrink:0 }}>×</button>
+                        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                          <button onClick={e => { e.stopPropagation(); openEdit(entry); }} style={{ background:"transparent", border:"none", color:"#6b7394", fontSize:13, cursor:"pointer", padding:"2px 4px" }}>✏️</button>
+                          <button onClick={e => { e.stopPropagation(); onDelete(entry.id); }} style={{ background:"transparent", border:"none", color:"#3a3f52", fontSize:16, cursor:"pointer", padding:"2px 4px" }}>×</button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -155,19 +172,18 @@ export default function Worklog({ entries, projects, onAdd, onDelete, viewOnly }
         );
       })}
 
-      {/* Add entry modal */}
-      {showAdd && (
-        <div onClick={e=>{if(e.target===e.currentTarget)setShowAdd(false)}} style={{ position:"fixed", inset:0, background:"rgba(13,15,20,0.9)", backdropFilter:"blur(8px)", zIndex:200, display:"flex", alignItems:"flex-end" }}>
+      {/* Add/Edit modal */}
+      {isModalOpen && (
+        <div onClick={e=>{if(e.target===e.currentTarget){setShowAdd(false);setEditEntry(null);}}} style={{ position:"fixed", inset:0, background:"rgba(13,15,20,0.9)", backdropFilter:"blur(8px)", zIndex:200, display:"flex", alignItems:"flex-end" }}>
           <div style={{ background:"#1c2030", borderRadius:"24px 24px 0 0", border:"1px solid #252a3a", padding:"24px 20px 40px", width:"100%", maxHeight:"90vh", overflowY:"auto" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24 }}>
-              <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600 }}>Новий запис</div>
-              <button onClick={()=>setShowAdd(false)} style={{ width:32,height:32,borderRadius:"50%",border:"1px solid #252a3a",background:"transparent",color:"#6b7394",fontSize:20,cursor:"pointer" }}>×</button>
+              <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600 }}>{editEntry ? "Редагувати запис" : "Новий запис"}</div>
+              <button onClick={()=>{setShowAdd(false);setEditEntry(null);}} style={{ width:32,height:32,borderRadius:"50%",border:"1px solid #252a3a",background:"transparent",color:"#6b7394",fontSize:20,cursor:"pointer" }}>×</button>
             </div>
 
             <div style={{ marginBottom:16 }}>
               <div style={LBL}>Дата</div>
-              <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}
-                style={{ background:"#161920",border:"1px solid #252a3a",borderRadius:10,padding:"10px 12px",color:"#e8eaf2",fontFamily:"'Manrope',sans-serif",fontSize:15,outline:"none",width:"100%" }} />
+              <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={DI} />
             </div>
 
             <div style={{ marginBottom:16 }}>
@@ -199,8 +215,8 @@ export default function Worklog({ entries, projects, onAdd, onDelete, viewOnly }
               <textarea value={form.task} onChange={e=>setForm(f=>({...f,task:e.target.value}))} placeholder="Що зробила? Напр.: зустріч з командою, підготовка звіту..." style={{ background:"#161920",border:"1px solid #252a3a",borderRadius:10,padding:"10px 12px",color:"#e8eaf2",fontFamily:"'Manrope',sans-serif",fontSize:14,outline:"none",width:"100%",resize:"vertical",minHeight:80 }} />
             </div>
 
-            <button onClick={handleAdd} style={{ width:"100%",padding:16,borderRadius:14,border:"none",background:form.task.trim()?"#6c8eff":"#252a3a",color:"#fff",fontFamily:"'Unbounded',sans-serif",fontWeight:600,fontSize:14,cursor:"pointer" }}>
-              Додати запис
+            <button onClick={handleSave} style={{ width:"100%",padding:16,borderRadius:14,border:"none",background:form.task.trim()?"#6c8eff":"#252a3a",color:"#fff",fontFamily:"'Unbounded',sans-serif",fontWeight:600,fontSize:14,cursor:"pointer" }}>
+              {editEntry ? "Зберегти зміни" : "Додати запис"}
             </button>
           </div>
         </div>
@@ -214,7 +230,6 @@ export default function Worklog({ entries, projects, onAdd, onDelete, viewOnly }
               <div style={{ fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600 }}>🏷 Проєкти</div>
               <button onClick={()=>setShowProjects(false)} style={{ width:32,height:32,borderRadius:"50%",border:"1px solid #252a3a",background:"transparent",color:"#6b7394",fontSize:20,cursor:"pointer" }}>×</button>
             </div>
-
             <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
               {projects.length === 0 && <div style={{ color:"#3a3f52", fontSize:13, textAlign:"center", padding:"16px 0" }}>Проєктів ще немає</div>}
               {projects.map(p => (
@@ -227,7 +242,6 @@ export default function Worklog({ entries, projects, onAdd, onDelete, viewOnly }
                 </div>
               ))}
             </div>
-
             <div style={LBL}>Новий проєкт</div>
             <div style={{ display:"flex", gap:8 }}>
               <input value={newProject} onChange={e=>setNewProject(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAddProject()} placeholder="Назва проєкту..." style={{ flex:1,background:"#161920",border:"1px solid #252a3a",borderRadius:10,padding:"10px 12px",color:"#e8eaf2",fontFamily:"'Manrope',sans-serif",fontSize:14,outline:"none" }} />
@@ -242,3 +256,4 @@ export default function Worklog({ entries, projects, onAdd, onDelete, viewOnly }
 
 const LBL = { fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:".8px", color:"#6b7394", marginBottom:10 };
 const TI = { background:"#161920",border:"1px solid #252a3a",borderRadius:10,padding:"10px 12px",color:"#e8eaf2",fontFamily:"'Manrope',sans-serif",fontSize:15,outline:"none",width:"100%" };
+const DI = { background:"#161920",border:"1px solid #252a3a",borderRadius:10,padding:"10px 12px",color:"#e8eaf2",fontFamily:"'Manrope',sans-serif",fontSize:15,outline:"none",width:"100%" };
