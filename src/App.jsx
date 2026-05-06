@@ -115,6 +115,12 @@ export default function App() {
     }
   }
 
+  async function handleWorklogEdit(item) {
+    const updated = worklog.map(e => e.id===item.id ? item : e);
+    setWorklog(updated);
+    await saveData("worklog", updated);
+  }
+
   async function handleWorklogDelete(id) {
     if (id.startsWith("__project__")) {
       const pid = id.replace("__project__","");
@@ -237,7 +243,7 @@ export default function App() {
         )}
 
         {tab==="worklog" && (
-          <Worklog entries={worklog} projects={projects} onAdd={handleWorklogAction} onDelete={handleWorklogDelete} viewOnly={viewOnly} />
+          <Worklog entries={worklog} projects={projects} onAdd={handleWorklogAction} onEdit={handleWorklogEdit} onDelete={handleWorklogDelete} viewOnly={viewOnly} />
         )}
       </div>
 
