@@ -50,6 +50,15 @@ function calcHours(day) {
 
 function defaultDay(wd) {
   if (wd===0||wd===6) return {type:"absent"};
+
+  if (wd===1 || wd===2 || wd===3) {
+    return {type:"office",start1:"09:00",end1:"13:00",note:""};
+  }
+
+  if (wd===4 || wd===5) {
+    return {type:"office",start1:"14:00",end1:"18:00",note:""};
+  }
+
   return {type:"office",start1:"09:00",end1:"13:00",note:""};
 }
 
