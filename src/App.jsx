@@ -96,7 +96,7 @@ export default function App() {
   function getDayData(d) { return scheduleData[d.toDateString()] || defaultDay(d.getDay()); }
 
   function openModal(d) {
-    if (!editMode||viewOnly||d.getDay()===0||d.getDay()===6) return;
+  if (!editMode||viewOnly) return;
     setModal({key:d.toDateString(),date:d});
     setForm({loc1:"office",loc2:"remote",...getDayData(d)});
   }
