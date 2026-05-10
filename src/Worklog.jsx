@@ -16,10 +16,30 @@ const MONTHS = [
 
 const EMPTY_BLOCK = { start: "09:00", end: "13:00" };
 
+function getDefaultTimeBlockForDate(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const day = d.getDay();
+
+  // Monday, Tuesday, Wednesday
+  if ([1, 2, 3].includes(day)) {
+    return { start: "09:00", end: "13:00" };
+  }
+
+  // Thursday, Friday
+  if ([4, 5].includes(day)) {
+    return { start: "14:00", end: "18:00" };
+  }
+
+  // Weekend fallback
+  return { ...EMPTY_BLOCK };
+}
+
 const EMPTY_FORM = {
   date: new Date().toISOString().slice(0, 10),
   task: "",
   projectId: "",
+  timeMode: "range",
+  durationHours: "",
   timeBlocks: [{ ...EMPTY_BLOCK }],
 };
 
@@ -50,10 +70,34 @@ function getEntryBlocks(entry) {
   return [];
 }
 
+function parseDurationHours(value) {
+  if (value === undefined || value === null || value === "") return 0;
+  const normalized = String(value).replace(",", ".");
+  const num = Number(normalized);
+  return Number.isFinite(num) && num > 0 ? num : 0;
+}
+
 function calcEntryHours(entry) {
+  if (entry.timeMode === "duration" || entry.durationHours) {
+    return parseDurationHours(entry.durationHours);
+  }
+
   return getEntryBlocks(entry).reduce((sum, block) => {
     return sum + calcDuration(block.start, block.end);
   }, 0);
+}
+
+function getEntrySortTime(entry) {
+  const blocks = sortBlocks(getEntryBlocks(entry));
+  return blocks[0]?.start || "99:99";
+}
+
+function sortEntriesByWorkedTime(entries) {
+  return [...entries].sort((a, b) => {
+    const timeCompare = getEntrySortTime(a).localeCompare(getEntrySortTime(b));
+    if (timeCompare !== 0) return timeCompare;
+    return (a.task || "").localeCompare(b.task || "");
+  });
 }
 
 function formatDate(dateStr) {
@@ -169,19 +213,34 @@ export default function Worklog({ entries, projects, onAdd, onEdit, onDelete, vi
       ...EMPTY_FORM,
       date: selectedDate,
       projectId: filter === "all" ? "" : filter,
-      timeBlocks: [{ ...EMPTY_BLOCK }],
+      timeMode: "range",
+      durationHours: "",
+      timeBlocks: [getDefaultTimeBlockForDate(selectedDate)],
     });
     setEditEntry(null);
     setShowAdd(true);
   }
 
+  function updateFormDate(nextDate) {
+    setForm(current => ({
+      ...current,
+      date: nextDate,
+      timeBlocks: editEntry || current.timeMode !== "range"
+        ? current.timeBlocks
+        : [getDefaultTimeBlockForDate(nextDate)],
+    }));
+  }
+
   function openEdit(entry) {
     const blocks = getEntryBlocks(entry);
+    const timeMode = entry.timeMode === "duration" || entry.durationHours ? "duration" : "range";
     setEditEntry(entry);
     setForm({
       date: entry.date,
       task: entry.task,
       projectId: entry.projectId || "",
+      timeMode,
+      durationHours: entry.durationHours ? String(entry.durationHours) : "",
       timeBlocks: blocks.length > 0 ? blocks.map(block => ({ ...block })) : [{ ...EMPTY_BLOCK }],
     });
   }
@@ -218,19 +277,27 @@ export default function Worklog({ entries, projects, onAdd, onEdit, onDelete, vi
   }
 
   function handleSave() {
+    if (!form.task.trim()) return;
+
+    const isDurationMode = form.timeMode === "duration";
+    const durationHours = parseDurationHours(form.durationHours);
+
     const cleanBlocks = form.timeBlocks
       .filter(block => block.start && block.end && calcDuration(block.start, block.end) > 0)
       .map(block => ({ start: block.start, end: block.end }));
 
-    if (!form.task.trim() || cleanBlocks.length === 0) return;
+    if (isDurationMode && durationHours <= 0) return;
+    if (!isDurationMode && cleanBlocks.length === 0) return;
 
     const sortedTimeBlocks = sortBlocks(cleanBlocks);
     const payload = {
       ...form,
       task: form.task.trim(),
-      timeBlocks: sortedTimeBlocks,
-      start: sortedTimeBlocks[0]?.start || "",
-      end: sortedTimeBlocks[sortedTimeBlocks.length - 1]?.end || "",
+      timeMode: isDurationMode ? "duration" : "range",
+      durationHours: isDurationMode ? durationHours : "",
+      timeBlocks: isDurationMode ? [] : sortedTimeBlocks,
+      start: isDurationMode ? "" : (sortedTimeBlocks[0]?.start || ""),
+      end: isDurationMode ? "" : (sortedTimeBlocks[sortedTimeBlocks.length - 1]?.end || ""),
     };
 
     if (editEntry) {
@@ -297,7 +364,9 @@ export default function Worklog({ entries, projects, onAdd, onEdit, onDelete, vi
   }, [periodEntries, projects]);
 
   const periodTotal = reportRows.reduce((sum, row) => sum + row.hours, 0);
-  const formTotal = form.timeBlocks.reduce((sum, block) => sum + calcDuration(block.start, block.end), 0);
+  const formTotal = form.timeMode === "duration"
+    ? parseDurationHours(form.durationHours)
+    : form.timeBlocks.reduce((sum, block) => sum + calcDuration(block.start, block.end), 0);
   const isModalOpen = showAdd || editEntry !== null;
 
   return (
@@ -465,12 +534,7 @@ export default function Worklog({ entries, projects, onAdd, onEdit, onDelete, vi
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {dayEntries
-                .sort((a, b) => {
-                  const aStart = getEntryBlocks(a)[0]?.start || "";
-                  const bStart = getEntryBlocks(b)[0]?.start || "";
-                  return aStart.localeCompare(bStart);
-                })
+              {sortEntriesByWorkedTime(dayEntries)
                 .map(entry => {
                   const project = projects.find(p => p.id === entry.projectId);
                   const style = getProjectStyle(projects, entry.projectId);
@@ -503,12 +567,16 @@ export default function Worklog({ entries, projects, onAdd, onEdit, onDelete, vi
                           </div>
 
                           <div style={{ color: "#6b7394", fontSize: 12, lineHeight: 1.6 }}>
-                            {blocks.map((block, index) => (
-                              <span key={`${block.start}-${block.end}-${index}`}>
-                                {block.start}–{block.end}
-                                {index < blocks.length - 1 ? " · " : ""}
-                              </span>
-                            ))}
+                            {entry.timeMode === "duration" || entry.durationHours ? (
+                              <span>без конкретного часу · внесено як тривалість</span>
+                            ) : (
+                              blocks.map((block, index) => (
+                                <span key={`${block.start}-${block.end}-${index}`}>
+                                  {block.start}–{block.end}
+                                  {index < blocks.length - 1 ? " · " : ""}
+                                </span>
+                              ))
+                            )}
                           </div>
                         </div>
 
@@ -586,9 +654,14 @@ export default function Worklog({ entries, projects, onAdd, onEdit, onDelete, vi
             <input
               type="date"
               value={form.date}
-              onChange={e => setForm(current => ({ ...current, date: e.target.value }))}
-              style={{ ...DI, marginBottom: 16 }}
+              onChange={e => updateFormDate(e.target.value)}
+              style={{ ...DI, marginBottom: 8 }}
             />
+            {!editEntry && form.timeMode === "range" && (
+              <div style={{ color: "#6b7394", fontSize: 12, marginBottom: 16 }}>
+                Дефолтний графік: пн–ср 09:00–13:00, чт–пт 14:00–18:00.
+              </div>
+            )}
 
             {projects.length > 0 && (
               <>
@@ -632,43 +705,89 @@ export default function Worklog({ entries, projects, onAdd, onEdit, onDelete, vi
               style={textareaStyle}
             />
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ ...LBL, marginBottom: 0 }}>Часові блоки за день</div>
-              <button onClick={addTimeBlock} style={secondaryButton}>
-                + блок
+            <div style={LBL}>Як звітувати час</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <button
+                onClick={() => setForm(current => ({ ...current, timeMode: "range" }))}
+                style={{
+                  ...pillButton,
+                  borderColor: form.timeMode === "range" ? "#6c8eff" : "#252a3a",
+                  background: form.timeMode === "range" ? "rgba(108,142,255,0.13)" : "transparent",
+                  color: form.timeMode === "range" ? "#6c8eff" : "#6b7394",
+                }}
+              >
+                Від часу до часу
+              </button>
+              <button
+                onClick={() => setForm(current => ({ ...current, timeMode: "duration" }))}
+                style={{
+                  ...pillButton,
+                  borderColor: form.timeMode === "duration" ? "#6c8eff" : "#252a3a",
+                  background: form.timeMode === "duration" ? "rgba(108,142,255,0.13)" : "transparent",
+                  color: form.timeMode === "duration" ? "#6c8eff" : "#6b7394",
+                }}
+              >
+                Просто кількість годин
               </button>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
-              {form.timeBlocks.map((block, index) => (
-                <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 8, alignItems: "center" }}>
-                  <input
-                    type="time"
-                    value={block.start}
-                    onChange={e => updateBlock(index, "start", e.target.value)}
-                    style={TI}
-                  />
-                  <span style={{ color: "#6b7394" }}>—</span>
-                  <input
-                    type="time"
-                    value={block.end}
-                    onChange={e => updateBlock(index, "end", e.target.value)}
-                    style={TI}
-                  />
-                  <button
-                    onClick={() => removeTimeBlock(index)}
-                    disabled={form.timeBlocks.length === 1}
-                    style={{
-                      ...iconButton,
-                      opacity: form.timeBlocks.length === 1 ? 0.3 : 1,
-                      cursor: form.timeBlocks.length === 1 ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    ×
+            {form.timeMode === "range" ? (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ ...LBL, marginBottom: 0 }}>Часові блоки за день</div>
+                  <button onClick={addTimeBlock} style={secondaryButton}>
+                    + блок
                   </button>
                 </div>
-              ))}
-            </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+                  {form.timeBlocks.map((block, index) => (
+                    <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 8, alignItems: "center" }}>
+                      <input
+                        type="time"
+                        value={block.start}
+                        onChange={e => updateBlock(index, "start", e.target.value)}
+                        style={TI}
+                      />
+                      <span style={{ color: "#6b7394" }}>—</span>
+                      <input
+                        type="time"
+                        value={block.end}
+                        onChange={e => updateBlock(index, "end", e.target.value)}
+                        style={TI}
+                      />
+                      <button
+                        onClick={() => removeTimeBlock(index)}
+                        disabled={form.timeBlocks.length === 1}
+                        style={{
+                          ...iconButton,
+                          opacity: form.timeBlocks.length === 1 ? 0.3 : 1,
+                          cursor: form.timeBlocks.length === 1 ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={LBL}>Кількість годин</div>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  value={form.durationHours}
+                  onChange={e => setForm(current => ({ ...current, durationHours: e.target.value }))}
+                  placeholder="Напр.: 2.5"
+                  style={{ ...DI, marginBottom: 14 }}
+                />
+                <div style={{ color: "#6b7394", fontSize: 12, lineHeight: 1.5, marginBottom: 14 }}>
+                  Цей варіант для задач, які розтягнуті протягом дня. У списку вони будуть після задач із конкретним часом.
+                </div>
+              </>
+            )}
 
             <div style={{ color: "#5fffd6", fontWeight: 800, marginBottom: 18, fontSize: 14 }}>
               Разом по задачі за день: {roundHours(formTotal)} год
