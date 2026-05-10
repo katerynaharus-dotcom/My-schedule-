@@ -49,19 +49,9 @@ function calcHours(day) {
 }
 
 function defaultDay(wd) {
-  function defaultDay(wd) {
-  if (wd===0||wd===6) {
-    return {type:"remote",start1:"09:00",end1:"13:00",note:"Вихідний, але можна звітувати час"};
-  };
-
-  if (wd===1 || wd===2 || wd===3) {
-    return {type:"office",start1:"09:00",end1:"13:00",note:""};
-  }
-
-  if (wd===4 || wd===5) {
-    return {type:"office",start1:"14:00",end1:"18:00",note:""};
-  }
-
+  // Thu=4, Fri=5 → 14:00-18:00
+  if (wd===0||wd===6) return {type:"absent"};
+  if (wd===4||wd===5) return {type:"office",start1:"14:00",end1:"18:00",note:""};
   return {type:"office",start1:"09:00",end1:"13:00",note:""};
 }
 
@@ -99,7 +89,7 @@ export default function App() {
   function getDayData(d) { return scheduleData[d.toDateString()] || defaultDay(d.getDay()); }
 
   function openModal(d) {
-  if (!editMode||viewOnly) return;
+    if (!editMode||viewOnly||d.getDay()===0||d.getDay()===6) return;
     setModal({key:d.toDateString(),date:d});
     setForm({loc1:"office",loc2:"remote",...getDayData(d)});
   }
@@ -225,8 +215,8 @@ export default function App() {
               {dates.map((d,i)=>{
                 const wd=d.getDay(),isWE=wd===0||wd===6,today=isToday(d);
                 const day=getDayData(d),cfg=TYPE_CONFIG[day.type]||TYPE_CONFIG.absent;
-                const h=calcHours(day),clickable=editMode&&!viewOnly;
-              return (
+                const h=calcHours(day),clickable=editMode&&!isWE&&!viewOnly;
+                return (
                   <div key={i} onClick={()=>openModal(d)} style={{background:"#1c2030",border:`1px solid ${today?"#6c8eff":"#252a3a"}`,borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,opacity:isWE?0.4:1,cursor:clickable?"pointer":"default",position:"relative",overflow:"hidden"}}>
                     <div style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:cfg.color,borderRadius:"16px 0 0 16px"}}/>
                     <div style={{minWidth:38,paddingLeft:4}}>
