@@ -222,8 +222,8 @@ export default function App() {
               {dates.map((d,i)=>{
                 const wd=d.getDay(),isWE=wd===0||wd===6,today=isToday(d);
                 const day=getDayData(d),cfg=TYPE_CONFIG[day.type]||TYPE_CONFIG.absent;
-                const h=calcHours(day),clickable=editMode&&!isWE&&!viewOnly;
-                return (
+                const h=calcHours(day),clickable=editMode&&!viewOnly;
+              return (
                   <div key={i} onClick={()=>openModal(d)} style={{background:"#1c2030",border:`1px solid ${today?"#6c8eff":"#252a3a"}`,borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,opacity:isWE?0.4:1,cursor:clickable?"pointer":"default",position:"relative",overflow:"hidden"}}>
                     <div style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:cfg.color,borderRadius:"16px 0 0 16px"}}/>
                     <div style={{minWidth:38,paddingLeft:4}}>
