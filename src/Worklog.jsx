@@ -43,6 +43,11 @@ const EMPTY_FORM = {
   timeBlocks: [{ ...EMPTY_BLOCK }],
 };
 
+function isWeekendDate(dateStr) {
+  const day = new Date(`${dateStr}T00:00:00`).getDay();
+  return day === 0 || day === 6;
+}
+
 function roundHours(value) {
   return Math.round(value * 10) / 10;
 }
@@ -209,11 +214,15 @@ export default function Worklog({ entries, projects, onAdd, onEdit, onDelete, vi
   const [newProject, setNewProject] = useState("");
 
   function openAdd() {
+    const weekend = isWeekendDate(selectedDate);
+
     setForm({
       ...EMPTY_FORM,
       date: selectedDate,
       projectId: filter === "all" ? "" : filter,
-      timeMode: "range",
+      // Weekend work is allowed. For weekends, duration mode is more convenient by default,
+      // but the user can still switch to exact time blocks if needed.
+      timeMode: weekend ? "duration" : "range",
       durationHours: "",
       timeBlocks: [getDefaultTimeBlockForDate(selectedDate)],
     });
@@ -222,9 +231,14 @@ export default function Worklog({ entries, projects, onAdd, onEdit, onDelete, vi
   }
 
   function updateFormDate(nextDate) {
+    const weekend = isWeekendDate(nextDate);
+
     setForm(current => ({
       ...current,
       date: nextDate,
+      // Do not block weekends. For a new weekend entry, switch to duration mode by default.
+      // Exact time blocks remain available if the user selects “Від часу до часу”.
+      timeMode: editEntry ? current.timeMode : (weekend ? "duration" : current.timeMode),
       timeBlocks: editEntry || current.timeMode !== "range"
         ? current.timeBlocks
         : [getDefaultTimeBlockForDate(nextDate)],
@@ -657,9 +671,14 @@ export default function Worklog({ entries, projects, onAdd, onEdit, onDelete, vi
               onChange={e => updateFormDate(e.target.value)}
               style={{ ...DI, marginBottom: 8 }}
             />
+            {isWeekendDate(form.date) && (
+              <div style={{ color: "#5fffd6", fontSize: 12, marginBottom: 8 }}>
+                Це вихідний у графіку, але звіт за цей день можна зберегти.
+              </div>
+            )}
             {!editEntry && form.timeMode === "range" && (
               <div style={{ color: "#6b7394", fontSize: 12, marginBottom: 16 }}>
-                Дефолтний графік: пн–ср 09:00–13:00, чт–пт 14:00–18:00.
+                Дефолтний графік: пн–ср 09:00–13:00, чт–пт 14:00–18:00. На вихідних можна вносити фактично відпрацьований час.
               </div>
             )}
 
